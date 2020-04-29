@@ -17,8 +17,10 @@ import static com.opentable.server.EmbeddedJettyBase.BOOT_CONNECTOR_NAME;
 import static com.opentable.server.EmbeddedJettyBase.DEFAULT_CONNECTOR_NAME;
 
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -43,9 +45,6 @@ public class PortSelector {
         FROM_DEFAULT_VALUE,
         NOT_FOUND
     }
-
-    private final Environment environment;
-    private int portIndex = 0;
 
     public static class PortSelection {
         private final String payload;
@@ -97,8 +96,31 @@ public class PortSelector {
         }
     }
 
-    public PortSelector(Environment environment) {
+    private final Environment environment;
+    private final int maxOrdinalPort; // -1 if none available, otherwise points to max PORTn
+    private int  allocatedPort = -1; // Currently allocated pointer. Always starts at -1
+
+    PortSelector(Environment environment) {
         this.environment = environment;
+        int maxPorts = -1;
+        int currentPort = 0;
+        // Find all contiguously defined ports, PORT0...PORTN
+        while (environment.getProperty("PORT" + currentPort ) != null) {
+            maxPorts = currentPort;
+            currentPort++;
+        }
+        this.maxOrdinalPort = maxPorts;
+    }
+
+    private synchronized int getNextPort() {
+        if (maxOrdinalPort == -1) {
+            throw new IllegalArgumentException("There are no ordinal ports defined at all");
+        }
+        if ((allocatedPort + 1) > maxOrdinalPort) {
+            throw new IllegalArgumentException("You don't have sufficient ordinal ports defined.");
+        }
+        allocatedPort++;
+        return allocatedPort;
     }
 
     private PortSelection get(String springPropertyName, String namedPort) {
@@ -107,8 +129,8 @@ public class PortSelector {
             if (isKubernetes(environment)) {
                 portSelection = get(springPropertyName, namedPort, PortSource.FROM_PORT_NAMED);
             } else {
-                portSelection = get(springPropertyName, "PORT" + portIndex, PortSource.FROM_PORT_ORDINAL);
-                portIndex++;
+                int port = getNextPort();
+                portSelection = get(springPropertyName, "PORT" + port, PortSource.FROM_PORT_ORDINAL);
             }
         }
         return portSelection;
@@ -128,7 +150,7 @@ public class PortSelector {
         return PortSelection.empty(name);
     }
 
-    public PortSelection getWithDefault(final String springProperty, final String namedPort, int defaultV) {
+    private PortSelection getWithDefault(final String springProperty, final String namedPort, int defaultV) {
         final PortSelection portSelection = get(springProperty, namedPort);
         return portSelection.hasValue() ? portSelection : new PortSelection(springProperty, String.valueOf(defaultV), PortSource.FROM_DEFAULT_VALUE, String.valueOf(defaultV));
     }
