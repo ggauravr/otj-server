@@ -49,9 +49,13 @@ import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.server.SslConnectionFactory;
 import org.eclipse.jetty.server.handler.RequestLogHandler;
 import org.eclipse.jetty.server.handler.StatisticsHandler;
+import org.eclipse.jetty.server.session.SessionHandler;
+import org.eclipse.jetty.servlet.ServletContextHandler;
+import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.eclipse.jetty.util.thread.ThreadPool;
+import org.eclipse.jetty.websocket.servlet.WebSocketServlet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -126,6 +130,9 @@ public abstract class EmbeddedJettyBase {
     @Value("${ot.httpserver.show-stack-on-error:#{environment.acceptsProfiles(\"!deployed\")}}")
     boolean showStacks;
 
+    @Value("${ot.socket.servlet.name:OTSocketServlet}")
+    String OTSocketServletName;
+
     /**
      * In the case that we bind to port 0, we'll get back a port from the OS.
      * With {@link #containerInitialized(WebServerInitializedEvent)}, we capture this value
@@ -187,11 +194,16 @@ public abstract class EmbeddedJettyBase {
         factory.addServerCustomizers(server -> {
             mbs.ifPresent(m -> server.addBean(new MBeanContainer(m)));
             Handler customizedHandler = server.getHandler();
+
             if (handlerCustomizers.isPresent()) {
                 for (final Function<Handler, Handler> customizer : handlerCustomizers.get()) {
                     customizedHandler = customizer.apply(customizedHandler);
                 }
             }
+
+//            Function<Handler, Handler> customizer = (handler) -> {
+//                server.getHandler().
+//            }
 
             if (!requestLogConfig.isEnabled()) {
                 LOG.debug("request logging disabled; config {}", requestLogConfig);
@@ -208,6 +220,19 @@ public abstract class EmbeddedJettyBase {
             final StatisticsHandler stats = new StatisticsHandler();
             stats.setHandler(customizedHandler);
             server.setHandler(stats);
+
+//            ServletContextHandler context = new ServletContextHandler(ServletContextHandler.SESSIONS);
+//            context.setContextPath("/");
+            final SessionHandler sessionHandler = new SessionHandler();
+            sessionHandler.setHandler(customizedHandler);
+            server.setHandler(sessionHandler);
+//            server.get
+            try{
+                Class clazz = Class.forName(OTSocketServletName);
+//                sessionHandler.addServlet(new ServletHolder((WebSocketServlet) clazz.newInstance()), "/chat");
+            } catch(Exception ex) {
+                LOG.debug("request logging disabled; config {}", ex);
+            }
 
             // Get Spring Boot's default connector, so we can get properties from it
             ServerConnector bootConnector = Arrays.stream(server.getConnectors())

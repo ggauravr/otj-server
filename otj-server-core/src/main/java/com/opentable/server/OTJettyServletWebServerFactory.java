@@ -76,6 +76,7 @@ public class OTJettyServletWebServerFactory extends JettyServletWebServerFactory
     }
 
     @Override
+    @SuppressWarnings("PMD.AvoidLosingExceptionInformation")
     protected JettyWebServer getJettyWebServer(Server server) {
         // always auto-start even if the default connector isn't configured
         return new JettyWebServer(server, true);
